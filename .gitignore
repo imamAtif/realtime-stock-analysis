@@ -172,3 +172,4 @@ cython_debug/
 .venv
 .env
 .idea
+.kafka_engine.txt
