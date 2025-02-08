@@ -2,3 +2,5 @@ requests
 python-dotenv==1.0.1
 alpaca-py
 kafka-python
+alpaca-trade-api
+pyspark==3.3.2

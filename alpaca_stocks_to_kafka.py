@@ -1,6 +1,5 @@
 import json
 import os
-from ensurepip import bootstrap
 
 from kafka import KafkaProducer
 from alpaca_trade_api import REST
@@ -29,47 +28,32 @@ api = REST(API_KEY, API_SECRET, endpoint)
 #     ssl_keyfile = 'user-access-key.key'
 # )
 SASL_MECHANISM = "SCRAM-SHA-256"
-print(
-    dict(
-        bootstrap_servers=KAFKA_BROKER,
-        sasl_mechanism=SASL_MECHANISM,
-        sasl_plain_username=SASL_USERNAME,
-        sasl_plain_password=SASL_PASSWORD,
-        security_protocol="SASL_SSL",
-        ssl_cafile=SSL_CA_FILE_PATH,
-    )
-)
+
 producer = KafkaProducer(
     bootstrap_servers=KAFKA_BROKER,
-    sasl_mechanism=SASL_MECHANISM,
-    sasl_plain_username=SASL_USERNAME,
-    sasl_plain_password=SASL_PASSWORD,
-    security_protocol="SASL_SSL",
-    ssl_cafile=SSL_CA_FILE_PATH,
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')  # ✅ Serializes JSON and encodes as bytes
+
 )
 
-
+print(producer)
 while True:
-    try:
-        quote = api.get_latest_quote(STOCK_SYMBOL)
-        trade = api.get_latest_trade(STOCK_SYMBOL)
-        # print(quote)
-        # print(quote,trade)
-        # print(f"Time: {trade.t}")
-        # print(f"Bid Price: {quote.bp}, Ask Price: {quote.ap}")
-        # print(f"Last Trade Price: {trade.p}, Trade Volume: {trade.s}")
-        message = {
-            "timestamp": str(trade.t),
-            "symbol": STOCK_SYMBOL,
-            "bid_price": quote.bp,
-            "ask_price": quote.ap,
-            "trade_price": trade.p,
-            "trade_volume": trade.s,
-        }
-        producer.send(KAFKA_TOPIC, message)
+    quote = api.get_latest_quote(STOCK_SYMBOL)
+    trade = api.get_latest_trade(STOCK_SYMBOL)
+    # print(quote)
+    # print(quote,trade)
+    # print(f"Time: {trade.t}")
+    # print(f"Bid Price: {quote.bp}, Ask Price: {quote.ap}")
+    # print(f"Last Trade Price: {trade.p}, Trade Volume: {trade.s}")
+    message = {
+        "timestamp": str(trade.t),
+        "symbol": STOCK_SYMBOL,
+        "bid_price": quote.bp,
+        "ask_price": quote.ap,
+        "trade_price": trade.p,
+        "trade_volume": trade.s,
+    }
+    producer.send(KAFKA_TOPIC, message)
 
-        print(message)
-        print("message sent to kafka")
-        time.sleep(15)
-    except Exception as e:
-        print(e)
+    print(message)
+    print("message sent to kafka")
+    time.sleep(15)

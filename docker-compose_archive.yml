@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.8.0
@@ -33,8 +31,10 @@ services:
       KAFKA_LISTENERS: 'PLAINTEXT://broker:29092,CONTROLLER://broker:29093,PLAINTEXT_HOST://0.0.0.0:9092'
       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
-      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'  # Generate using: `bin/kafka-storage.sh random-uuid`
+      KAFKA_LOG_DIRS: '/var/lib/kafka/data'  # ✅ Persistent log directory
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    volumes:
+      - kafka_data:/var/lib/kafka/data  # ✅ Attach persistent volume
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.8.0
@@ -129,21 +129,76 @@ services:
       KAFKA_REST_LISTENERS: "http://0.0.0.0:8082"
       KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
 
+#  spark-master:
+#    image: cluster-apache-spark:3.0.2
+#    ports:
+#      - "9090:8080"
+#      - "7077:7077"
+#    volumes:
+#      - ./apps:/opt/spark-apps
+#      - ./data:/opt/spark-data
+#    environment:
+#      - SPARK_LOCAL_IP=spark-master
+#      - SPARK_WORKLOAD=master
+#  spark-worker-a:
+#    image: cluster-apache-spark:3.0.2
+#    ports:
+#      - "9091:8080"
+#      - "7000:7000"
+#    depends_on:
+#      - spark-master
+#    environment:
+#      - SPARK_MASTER=spark://spark-master:7077
+#      - SPARK_WORKER_CORES=1
+#      - SPARK_WORKER_MEMORY=1G
+#      - SPARK_DRIVER_MEMORY=1G
+#      - SPARK_EXECUTOR_MEMORY=1G
+#      - SPARK_WORKLOAD=worker
+#      - SPARK_LOCAL_IP=spark-worker-a
+#    volumes:
+#      - ./apps:/opt/spark-apps
+#      - ./data:/opt/spark-data
+#  spark-worker-b:
+#    image: cluster-apache-spark:3.0.2
+#    ports:
+#      - "9092:8080"
+#      - "7001:7000"
+#    depends_on:
+#      - spark-master
+#    environment:
+#      - SPARK_MASTER=spark://spark-master:7077
+#      - SPARK_WORKER_CORES=1
+#      - SPARK_WORKER_MEMORY=1G
+#      - SPARK_DRIVER_MEMORY=1G
+#      - SPARK_EXECUTOR_MEMORY=1G
+#      - SPARK_WORKLOAD=worker
+#      - SPARK_LOCAL_IP=spark-worker-b
+#    volumes:
+#      - ./apps:/opt/spark-apps
+#      - ./data:/opt/spark-data
   spark-master:
-    image: apache/spark:v3.3.2  # ✅ Official Apache Spark image
+    image: bitnami/spark:3.3.4
     container_name: spark-master
     restart: always
     ports:
-      - "7077:7077"  # Spark Master port
       - "8080:8080"  # Spark Web UI
+      - "7077:7077"  # Spark Master Port
     environment:
       - SPARK_MODE=master
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=spark
+#    extra_hosts:
+#      - "host.docker.internal:${HOST_IP}"
+#    command: [ "/opt/bitnami/spark/bin/spark-class", "org.apache.spark.deploy.master.Master" ]
     volumes:
-      - spark_work:/opt/spark/work  # ✅ Mount a volume for Spark work directory
+      - ./data:/opt/spark/work
+      - ./jars:/opt/spark/jars  # Store extra JARs if needed
 
   spark-worker:
-    image: apache/spark:v3.3.2  # ✅ Official Apache Spark image
+    image: bitnami/spark:3.3.4
     container_name: spark-worker
     restart: always
     depends_on:
@@ -151,9 +206,19 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=spark
+#    extra_hosts:
+#      - "host.docker.internal:${HOST_IP}"
+#    command: [ "/opt/bitnami/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077" ]
     volumes:
-      - spark_work:/opt/spark/work  # ✅ Mount the same volume
+      - ./data:/opt/spark/work
+      - ./jars:/opt/spark/jars  # Store extra JARs if needed
 
   postgres:
     image: postgres:15.3  # ✅ PostgreSQL 15.3 for database storage
@@ -169,6 +234,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
 volumes:
-  spark_work:
-    driver: local  # ✅ Defines a persistent volume for Spark work directory
+  kafka_data:  # ✅ Persistent Kafka logs
+  spark_work:  # ✅ Defines a persistent volume for Spark work directory
   postgres_data:
+  spark_data:
+
+#networks:
+#  spark-network:
+#      driver: bridge
