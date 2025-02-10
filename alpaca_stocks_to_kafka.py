@@ -54,6 +54,6 @@ while True:
     }
     producer.send(KAFKA_TOPIC, message)
 
-    print(message)
+    # print(message)
     print("message sent to kafka")
-    time.sleep(15)
+    time.sleep(5)

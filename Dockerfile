@@ -1,56 +1,49 @@
-FROM python:3.10-bullseye as spark-base
+# builder step used to download and configure spark environment
+FROM openjdk:11.0.11-jre-slim-buster as builder
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      sudo \
-      curl \
-      vim \
-      unzip \
-      rsync \
-      openjdk-11-jdk \
-      build-essential \
-      software-properties-common \
-      ssh && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Add Dependencies for PySpark
+RUN apt-get update && apt-get install -y curl vim wget software-properties-common ssh net-tools ca-certificates python3 python3-pip python3-numpy python3-matplotlib python3-scipy python3-pandas python3-simpy
 
+RUN update-alternatives --install "/usr/bin/python" "python" "$(which python3)" 1
 
+# Fix the value of PYTHONHASHSEED
+# Note: this is needed when you use Python 3.3 or greater
+ENV SPARK_VERSION=3.4.0 \
+HADOOP_VERSION=3 \
+SPARK_HOME=/opt/spark \
+PYTHONHASHSEED=1
 
-## Download spark and hadoop dependencies and install
+# COPY the pre-downloaded Spark TGZ
+COPY apache-spark.tgz /tmp/
 
-# Optional env variables
-ENV SPARK_HOME=${SPARK_HOME:-"/opt/spark"}
-ENV HADOOP_HOME=${HADOOP_HOME:-"/opt/hadoop"}
+# Download and uncompress spark from the apache archive (now from the copied file)
+RUN mkdir -p /opt/spark \
+    && tar -xf /tmp/apache-spark.tgz -C /opt/spark --strip-components=1 \
+    && rm /tmp/apache-spark.tgz  # Clean up the .tgz file
 
-RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME}
-WORKDIR ${SPARK_HOME}
+# Apache spark environment
+FROM builder as apache-spark
 
+WORKDIR /opt/spark
 
-RUN curl https://dlcdn.apache.org/spark/spark-3.3.1/spark-3.3.1-bin-hadoop3.tgz -o spark-3.3.1-bin-hadoop3.tgz \
- && tar xvzf spark-3.3.1-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \
- && rm -rf spark-3.3.1-bin-hadoop3.tgz
+ENV SPARK_MASTER_PORT=7077 \
+SPARK_MASTER_WEBUI_PORT=8080 \
+SPARK_LOG_DIR=/opt/spark/logs \
+SPARK_MASTER_LOG=/opt/spark/logs/spark-master.out \
+SPARK_WORKER_LOG=/opt/spark/logs/spark-worker.out \
+SPARK_WORKER_WEBUI_PORT=8080 \
+SPARK_WORKER_PORT=7000 \
+SPARK_MASTER="spark://spark-master:7077" \
+SPARK_WORKLOAD="master"
 
+EXPOSE 8080 7077 6066
 
-FROM spark-base as pyspark
+RUN mkdir -p $SPARK_LOG_DIR && \
+touch $SPARK_MASTER_LOG && \
+touch $SPARK_WORKER_LOG && \
+ln -sf /dev/stdout $SPARK_MASTER_LOG && \
+ln -sf /dev/stdout $SPARK_WORKER_LOG
 
-# Install python deps
-COPY requirements/requirements.txt .
-RUN pip3 install -r requirements.txt
+COPY start-spark.sh /
 
-ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
-ENV SPARK_HOME="/opt/spark"
-ENV SPARK_MASTER="spark://spark-master:7077"
-ENV SPARK_MASTER_HOST spark-master
-ENV SPARK_MASTER_PORT 7077
-ENV PYSPARK_PYTHON python3
-
-COPY conf/spark-defaults.conf "$SPARK_HOME/conf"
-
-RUN chmod u+x /opt/spark/sbin/* && \
-    chmod u+x /opt/spark/bin/*
-
-ENV PYTHONPATH=$SPARK_HOME/python/:$PYTHONPATH
-
-COPY entrypoint.sh .
-
-ENTRYPOINT ["./entrypoint.sh"]
+CMD ["/bin/bash", "/start-spark.sh"]
